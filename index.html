@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>コリドール</title>
+  <!-- おしゃれなフォントを読み込みます -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700&display=swap" rel="stylesheet">
+  <!-- CSSファイルをインクルード -->
+  <?!= include('styles'); ?>
+</head>
+<body>
+
+  <div id="game-container">
+    <!-- ゲーム開始前の設定画面 -->
+    <div id="setup-screen">
+      <h1>コリドール</h1>
+      <p>カベをつかって、ゴールをめざせ！</p>
+      <div class="setup-form">
+        <label for="board-size-select">ボードの<ruby>大<rt>おお</rt></ruby>きさを<ruby>選<rt>えら</rt></ruby>んでね</label>
+        <select id="board-size-select">
+          <option value="7">7x7 (かんたん)</option>
+          <option value="9" selected>9x9 (ふつう)</option>
+          <option value="11">11x11 (むずかしい)</option>
+        </select>
+        <button id="start-game-btn">ゲーム<ruby>開始<rt>かいし</rt></ruby></button>
+      </div>
+    </div>
+
+    <!-- メインのゲーム画面 -->
+    <div id="game-screen" style="display: none;">
+      <div id="game-info">
+        <div class="player-info player1-info">
+          <div class="pawn-display player1"></div>
+          <div>
+            <span>プレイヤー１</span>
+            <span id="player1-walls"></span>
+          </div>
+        </div>
+        <div id="message-area"></div>
+        <div class="player-info player2-info">
+          <div class="pawn-display player2"></div>
+          <div>
+            <span>プレイヤー２</span>
+            <span id="player2-walls"></span>
+          </div>
+        </div>
+      </div>
+
+      <div id="board-wrapper">
+        <div id="board"></div>
+      </div>
+      
+      <div id="controls">
+        <h3><ruby>操作<rt>そうさ</rt></ruby>モード</h3>
+        <button id="move-mode-btn" class="active">コマを<ruby>動<rt>うご</rt></ruby>かす</button>
+        <button id="wall-mode-btn">カベを<ruby>置<rt>お</rt></ruby>く</button>
+        <button id="reset-btn">リセット</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 勝利メッセージのモーダル -->
+  <div id="winner-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <h2 id="winner-message"></h2>
+      <button id="play-again-btn">もう<ruby>一回<rt>いっかい</rt></ruby><ruby>遊<rt>あそ</rt></ruby>ぶ</button>
+    </div>
+  </div>
+
+  <!-- ローディング表示 -->
+  <div id="loader" style="display: none;">
+    <div class="loader-pawn"></div>
+    <p><ruby>読<rt>よ</rt></ruby>み<ruby>込<rt>こ</rt></ruby>み<ruby>中<rt>ちゅう</rt></ruby>...</p>
+  </div>
+
+
+  <!-- JavaScriptファイルをインクルード -->
+  <?!= include('client.js'); ?>
+</body>
+</html>
