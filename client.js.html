@@ -1,0 +1,303 @@
+<script>
+//================================================================
+// 1. グローバル変数とDOM要素の取得
+//================================================================
+let gameState = {};
+let currentMode = 'move';
+const CELL_SIZE = 50;
+const GAP_SIZE = 5;
+let playerId = ''; // ▼ 追加: プレイヤーIDを保存する変数
+
+// DOM要素
+const setupScreen = document.getElementById('setup-screen');
+const gameScreen = document.getElementById('game-screen');
+const boardSizeSelect = document.getElementById('board-size-select');
+const startGameBtn = document.getElementById('start-game-btn');
+const boardDiv = document.getElementById('board');
+const messageArea = document.getElementById('message-area');
+const loader = document.getElementById('loader');
+const moveModeBtn = document.getElementById('move-mode-btn');
+const wallModeBtn = document.getElementById('wall-mode-btn');
+const winnerModal = document.getElementById('winner-modal');
+
+//================================================================
+// 2. イベントリスナーと初期化
+//================================================================
+document.addEventListener('DOMContentLoaded', () => {
+  // ▼ 追加: ページ読み込み時にプレイヤーIDを取得または新規作成
+  getOrSetPlayerId();
+
+  startGameBtn.addEventListener('click', () => {
+    const boardSize = parseInt(boardSizeSelect.value);
+    showLoader();
+    google.script.run
+      .withSuccessHandler(handleGameUpdate)
+      .withFailureHandler(handleError)
+      // ▼ 変更点: サーバーにプレイヤーIDを渡す
+      .initializeGame(boardSize, playerId);
+  });
+  
+  moveModeBtn.addEventListener('click', () => setMode('move'));
+  wallModeBtn.addEventListener('click', () => setMode('wall'));
+
+  document.getElementById('reset-btn').addEventListener('click', resetGame);
+  document.getElementById('play-again-btn').addEventListener('click', resetGame);
+});
+
+/**
+ * ▼ 追加: ブラウザのsessionStorageからIDを取得、なければ作成して保存する関数
+ */
+function getOrSetPlayerId() {
+  let id = sessionStorage.getItem('corridorPlayerId');
+  if (!id) {
+    id = crypto.randomUUID();
+    sessionStorage.setItem('corridorPlayerId', id);
+  }
+  playerId = id;
+}
+
+
+//================================================================
+// 3. ゲームの描画と更新
+//================================================================
+
+function handleGameUpdate(state) {
+  // ▼ 追加: サーバーからエラーが返ってきた場合の処理
+  if (state.error) {
+    handleError(state);
+    return;
+  }
+
+  gameState = state;
+  if (setupScreen.style.display !== 'none') {
+    setupScreen.style.display = 'none';
+    gameScreen.style.display = 'block';
+  }
+
+  drawBoard();
+  drawPawns();
+  drawWalls();
+  updateGameInfo();
+  highlightPossibleActions();
+
+  if (gameState.winner) {
+    document.getElementById('winner-message').textContent = gameState.message;
+    winnerModal.style.display = 'flex';
+  }
+
+  hideLoader();
+}
+
+function drawBoard() {
+  boardDiv.innerHTML = '';
+  const { boardSize } = gameState;
+  boardDiv.style.gridTemplateColumns = `repeat(${boardSize}, ${CELL_SIZE}px)`;
+  boardDiv.style.gridTemplateRows = `repeat(${boardSize}, ${CELL_SIZE}px)`;
+  boardDiv.style.width = `${boardSize * (CELL_SIZE + GAP_SIZE)}px`;
+  boardDiv.style.height = `${boardSize * (CELL_SIZE + GAP_SIZE)}px`;
+
+  for (let r = 0; r < boardSize; r++) {
+    for (let c = 0; c < boardSize; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.row = r;
+      cell.dataset.col = c;
+      cell.addEventListener('click', onCellClick);
+      boardDiv.appendChild(cell);
+    }
+  }
+  createWallSlots();
+}
+
+function drawPawns() {
+  Object.keys(gameState.players).forEach(p_id => {
+    const player = gameState.players[p_id];
+    const pawn = document.createElement('div');
+    pawn.className = `pawn player${p_id}`;
+    const cellElement = document.querySelector(`.cell[data-row='${player.row}'][data-col='${player.col}']`);
+    if(cellElement) cellElement.appendChild(pawn);
+  });
+}
+
+function drawWalls() {
+  gameState.walls.forEach(wall => {
+    const wallDiv = document.createElement('div');
+    wallDiv.className = `wall ${wall.orientation}`;
+    const totalCellSize = CELL_SIZE + GAP_SIZE;
+    if (wall.orientation === 'horizontal') {
+      wallDiv.style.width = `${CELL_SIZE * 2 + GAP_SIZE}px`;
+      wallDiv.style.height = `${GAP_SIZE}px`;
+      wallDiv.style.top = `${(wall.row + 1) * totalCellSize - GAP_SIZE}px`;
+      wallDiv.style.left = `${wall.col * totalCellSize}px`;
+    } else {
+      wallDiv.style.width = `${GAP_SIZE}px`;
+      wallDiv.style.height = `${CELL_SIZE * 2 + GAP_SIZE}px`;
+      wallDiv.style.top = `${wall.row * totalCellSize}px`;
+      wallDiv.style.left = `${(wall.col + 1) * totalCellSize - GAP_SIZE}px`;
+    }
+    boardDiv.appendChild(wallDiv);
+  });
+}
+
+function createWallSlots() {
+  const { boardSize } = gameState;
+  const totalCellSize = CELL_SIZE + GAP_SIZE;
+  for (let r = 0; r < boardSize - 1; r++) {
+    for (let c = 0; c < boardSize - 1; c++) {
+      const slotH = document.createElement('div');
+      slotH.className = 'wall-slot horizontal';
+      slotH.dataset.row = r; slotH.dataset.col = c; slotH.dataset.orientation = 'horizontal';
+      slotH.style.cssText = `width:${CELL_SIZE*2+GAP_SIZE}px; height:${GAP_SIZE}px; top:${(r+1)*totalCellSize-GAP_SIZE}px; left:${c*totalCellSize}px;`;
+      slotH.addEventListener('click', onWallSlotClick);
+      boardDiv.appendChild(slotH);
+    }
+  }
+  for (let r = 0; r < boardSize - 1; r++) {
+    for (let c = 0; c < boardSize - 1; c++) {
+      const slotV = document.createElement('div');
+      slotV.className = 'wall-slot vertical';
+      slotV.dataset.row = r; slotV.dataset.col = c; slotV.dataset.orientation = 'vertical';
+      slotV.style.cssText = `width:${GAP_SIZE}px; height:${CELL_SIZE*2+GAP_SIZE}px; top:${r*totalCellSize}px; left:${(c+1)*totalCellSize-GAP_SIZE}px;`;
+      slotV.addEventListener('click', onWallSlotClick);
+      boardDiv.appendChild(slotV);
+    }
+  }
+}
+
+function updateGameInfo() {
+  messageArea.textContent = gameState.message;
+  document.getElementById('player1-walls').textContent = `のこりカベ: ${gameState.players['1'].walls}`;
+  document.getElementById('player2-walls').textContent = `のこりカベ: ${gameState.players['2'].walls}`;
+  
+  document.querySelector('.player1-info').style.fontWeight = gameState.currentPlayer === 1 ? 'bold' : 'normal';
+  document.querySelector('.player2-info').style.fontWeight = gameState.currentPlayer === 2 ? 'bold' : 'normal';
+}
+
+
+//================================================================
+// 4. ユーザー操作の処理
+//================================================================
+
+function onCellClick(e) {
+  if (currentMode !== 'move' || gameState.winner || !e.currentTarget.querySelector('.valid-move-highlight')) return;
+  const action = {
+    type: 'move',
+    data: {
+      newRow: parseInt(e.currentTarget.dataset.row),
+      newCol: parseInt(e.currentTarget.dataset.col),
+    }
+  };
+  sendActionToServer(action);
+}
+
+function onWallSlotClick(e) {
+  if (currentMode !== 'wall' || gameState.winner) return;
+  const action = {
+    type: 'wall',
+    data: {
+      row: parseInt(e.currentTarget.dataset.row),
+      col: parseInt(e.currentTarget.dataset.col),
+      orientation: e.currentTarget.dataset.orientation,
+    }
+  };
+  sendActionToServer(action);
+}
+
+function sendActionToServer(action) {
+  showLoader();
+  google.script.run
+    .withSuccessHandler(handleGameUpdate)
+    .withFailureHandler(handleError)
+    // ▼ 変更点: サーバーにプレイヤーIDを渡す
+    .processPlayerAction(action, playerId);
+}
+
+
+//================================================================
+// 5. UIヘルパー関数とクライアントサイドのルール検証
+//================================================================
+
+function isWallBlocking(r1, c1, r2, c2, walls) {
+  for (const wall of walls) {
+    if (wall.orientation === 'horizontal') {
+      if (r1 !== r2 && wall.row === Math.min(r1, r2) && (wall.col === c1 || wall.col === c1 - 1)) return true;
+    } else {
+      if (c1 !== c2 && wall.col === Math.min(c1, c2) && (wall.row === r1 || wall.row === r1 - 1)) return true;
+    }
+  }
+  return false;
+}
+
+function addHighlight(r, c) {
+    if (r < 0 || r >= gameState.boardSize || c < 0 || c >= gameState.boardSize) return;
+    const cell = document.querySelector(`.cell[data-row='${r}'][data-col='${c}']`);
+    if (cell && !cell.querySelector('.pawn')) {
+        const highlight = document.createElement('div');
+        highlight.className = 'valid-move-highlight';
+        cell.appendChild(highlight);
+    }
+}
+
+function highlightPossibleActions() {
+    document.querySelectorAll('.valid-move-highlight').forEach(el => el.remove());
+    document.querySelectorAll('.wall-slot').forEach(el => el.style.backgroundColor = 'rgba(0,0,0,0.1)');
+    
+    if (gameState.winner) return;
+    if (currentMode === 'move') {
+        const { players, walls } = gameState;
+        const p1 = players['1'], p2 = players['2'];
+        const currentP = players[gameState.currentPlayer];
+        const opponentP = players[gameState.currentPlayer === 1 ? '2' : '1'];
+        const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        
+        for (const [dr, dc] of directions) {
+            const nextR = currentP.row + dr, nextC = currentP.col + dc;
+            if (!isWallBlocking(currentP.row, currentP.col, nextR, nextC, walls) && (nextR !== opponentP.row || nextC !== opponentP.col)) {
+                addHighlight(nextR, nextC);
+            }
+        }
+
+        const isAdjacent = Math.abs(p1.row - p2.row) + Math.abs(p1.col - p2.col) === 1;
+        if (isAdjacent && !isWallBlocking(p1.row, p1.col, p2.row, p2.col, walls)) {
+            const jumpR = opponentP.row + (opponentP.row - currentP.row);
+            const jumpC = opponentP.col + (opponentP.col - currentP.col);
+            if (!isWallBlocking(opponentP.row, opponentP.col, jumpR, jumpC, walls)) {
+                addHighlight(jumpR, jumpC);
+            } else {
+                for (const [dr, dc] of directions) {
+                    const nextR = opponentP.row + dr, nextC = opponentP.col + dc;
+                    if (nextR === currentP.row && nextC === currentP.col) continue;
+                    if (!isWallBlocking(opponentP.row, opponentP.col, nextR, nextC, walls)) addHighlight(nextR, nextC);
+                }
+            }
+        }
+    } else {
+        if (gameState.players[gameState.currentPlayer].walls > 0) {
+            document.querySelectorAll('.wall-slot').forEach(el => el.style.backgroundColor = 'rgba(46, 204, 113, 0.2)');
+        }
+    }
+}
+
+function setMode(mode) {
+  currentMode = mode;
+  moveModeBtn.classList.toggle('active', mode === 'move');
+  wallModeBtn.classList.toggle('active', mode === 'wall');
+  highlightPossibleActions();
+}
+
+function resetGame() {
+  winnerModal.style.display = 'none';
+  gameScreen.style.display = 'none';
+  setupScreen.style.display = 'block';
+  // セッションストレージはクリアしないので、同じブラウザなら同じIDを使い続ける
+}
+
+function showLoader() { loader.style.display = 'flex'; }
+function hideLoader() { loader.style.display = 'none'; }
+
+function handleError(error) {
+  // ▼ 変更点: エラーオブジェクトにメッセージがあればそれを表示
+  messageArea.textContent = error.message || 'あれれ、エラーが起きちゃったみたい。';
+  hideLoader();
+}
+</script>
